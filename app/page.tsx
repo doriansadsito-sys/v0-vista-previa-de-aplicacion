@@ -18,7 +18,7 @@ import { NotificationsScreen } from "@/components/task-manager/notifications/not
 export default function TaskManagerHome() {
   const [activeModal, setActiveModal] = useState<ActionType | null>(null)
   const [activeTab, setActiveTab] = useState<NavTab>("home")
-  const [showOnboarding, setShowOnboarding] = useState(true)
+  const [showOnboarding, setShowOnboarding] = useState(false)
   const [showNotifications, setShowNotifications] = useState(false)
 
   const handleActionClick = (action: ActionType) => {
