@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next'
 import { Inter } from 'next/font/google'
 import './globals.css'
+import { ThemeProvider } from '@/contexts/theme-context'
 
 const inter = Inter({ 
   subsets: ["latin"],
@@ -12,12 +13,15 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 1,
   userScalable: false,
-  themeColor: '#faf9f7',
+  themeColor: [
+    { media: '(prefers-color-scheme: light)', color: '#faf9f7' },
+    { media: '(prefers-color-scheme: dark)', color: '#1a1a1a' },
+  ],
 }
 
 export const metadata: Metadata = {
-  title: 'Tasky - Gestiona tu día',
-  description: 'App minimalista de gestión de tareas',
+  title: 'Tasky - Gestiona tu dia',
+  description: 'App minimalista de gestion de tareas con IA',
 }
 
 export default function RootLayout({
@@ -26,9 +30,11 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="es" className="bg-background">
-      <body className={`${inter.variable} font-sans antialiased`}>
-        {children}
+    <html lang="es" suppressHydrationWarning>
+      <body className={`${inter.variable} font-sans antialiased bg-background`}>
+        <ThemeProvider>
+          {children}
+        </ThemeProvider>
       </body>
     </html>
   )

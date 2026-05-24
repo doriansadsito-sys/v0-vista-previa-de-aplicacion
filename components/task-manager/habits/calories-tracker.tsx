@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useRef } from "react"
-import { ArrowLeft, Camera, Sparkles, AlertCircle, Plus, Flame, TrendingUp, X, Loader2 } from "lucide-react"
+import { ArrowLeft, Camera, Sparkles, AlertCircle, Plus, Flame, TrendingUp, X, Loader2, Edit3 } from "lucide-react"
 
 interface CaloriesTrackerProps {
   onBack?: () => void
@@ -12,7 +12,16 @@ interface FoodEntry {
   name: string
   calories: number
   time: string
-  image?: string
+  ingredients?: string[]
+  confidence?: string
+}
+
+interface AnalyzedFood {
+  name: string
+  calories: number
+  ingredients: string[]
+  portion: string
+  confidence: 'high' | 'medium' | 'low'
 }
 
 export function CaloriesTracker({ onBack }: CaloriesTrackerProps) {
@@ -20,7 +29,11 @@ export function CaloriesTracker({ onBack }: CaloriesTrackerProps) {
   const [target] = useState(2000)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [showResult, setShowResult] = useState(false)
-  const [analyzedFood, setAnalyzedFood] = useState<{ name: string; calories: number } | null>(null)
+  const [analyzedFood, setAnalyzedFood] = useState<AnalyzedFood | null>(null)
+  const [editingCalories, setEditingCalories] = useState(false)
+  const [customCalories, setCustomCalories] = useState("")
+  const [capturedImage, setCapturedImage] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const [entries, setEntries] = useState<FoodEntry[]>([
@@ -37,40 +50,90 @@ export function CaloriesTracker({ onBack }: CaloriesTrackerProps) {
     fileInputRef.current?.click()
   }
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
-    if (file) {
-      setIsAnalyzing(true)
-      // Simular analisis de IA
-      setTimeout(() => {
-        const foods = [
-          { name: "Sandwich de pollo", calories: 380 },
-          { name: "Pasta con salsa", calories: 520 },
-          { name: "Hamburguesa", calories: 650 },
-          { name: "Pizza (2 rebanadas)", calories: 540 },
-          { name: "Tacos (3 piezas)", calories: 480 },
-          { name: "Sushi roll", calories: 350 },
-        ]
-        const randomFood = foods[Math.floor(Math.random() * foods.length)]
-        setAnalyzedFood(randomFood)
-        setIsAnalyzing(false)
+    if (!file) return
+
+    setIsAnalyzing(true)
+    setError(null)
+
+    // Mostrar preview de la imagen
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      setCapturedImage(e.target?.result as string)
+    }
+    reader.readAsDataURL(file)
+
+    try {
+      const formData = new FormData()
+      formData.append('image', file)
+
+      const response = await fetch('/api/analyze-food', {
+        method: 'POST',
+        body: formData
+      })
+
+      if (!response.ok) {
+        throw new Error('Error al analizar la imagen')
+      }
+
+      const result = await response.json()
+      
+      if (result.success && result.data) {
+        setAnalyzedFood(result.data)
+        setCustomCalories(result.data.calories.toString())
         setShowResult(true)
-      }, 2000)
+      } else {
+        throw new Error('No se pudo identificar la comida')
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error al analizar')
+      setCapturedImage(null)
+    } finally {
+      setIsAnalyzing(false)
+    }
+
+    // Limpiar input
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''
     }
   }
 
   const addAnalyzedFood = () => {
     if (analyzedFood) {
+      const finalCalories = editingCalories ? parseInt(customCalories) || analyzedFood.calories : analyzedFood.calories
       const newEntry: FoodEntry = {
         id: Date.now().toString(),
         name: analyzedFood.name,
-        calories: analyzedFood.calories,
-        time: new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })
+        calories: finalCalories,
+        time: new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }),
+        ingredients: analyzedFood.ingredients,
+        confidence: analyzedFood.confidence
       }
       setEntries([...entries, newEntry])
-      setTodayCalories(todayCalories + analyzedFood.calories)
+      setTodayCalories(todayCalories + finalCalories)
       setShowResult(false)
       setAnalyzedFood(null)
+      setCapturedImage(null)
+      setEditingCalories(false)
+    }
+  }
+
+  const getConfidenceColor = (confidence: string) => {
+    switch (confidence) {
+      case 'high': return 'text-green-500 bg-green-500/10'
+      case 'medium': return 'text-amber-500 bg-amber-500/10'
+      case 'low': return 'text-red-500 bg-red-500/10'
+      default: return 'text-muted-foreground bg-secondary'
+    }
+  }
+
+  const getConfidenceText = (confidence: string) => {
+    switch (confidence) {
+      case 'high': return 'Alta confianza'
+      case 'medium': return 'Confianza media'
+      case 'low': return 'Baja confianza'
+      default: return 'Desconocido'
     }
   }
 
@@ -115,11 +178,22 @@ export function CaloriesTracker({ onBack }: CaloriesTrackerProps) {
       <div className="px-6 py-4 -mt-4">
         {/* Disclaimer */}
         <div className="bg-amber-500/10 rounded-xl p-3 mb-4 flex items-start gap-2 border border-amber-500/20">
-          <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
-          <p className="text-xs text-amber-700">
+          <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
+          <p className="text-xs text-amber-700 dark:text-amber-300">
             Las calorias son <strong>aproximadas</strong> y estimadas por IA. Para calculos precisos, consulta con un nutriologo.
           </p>
         </div>
+
+        {/* Error message */}
+        {error && (
+          <div className="bg-red-500/10 rounded-xl p-3 mb-4 flex items-start gap-2 border border-red-500/20">
+            <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
+            <p className="text-xs text-red-600 dark:text-red-400">{error}</p>
+            <button onClick={() => setError(null)} className="ml-auto">
+              <X className="w-4 h-4 text-red-500" />
+            </button>
+          </div>
+        )}
 
         {/* Main tracker card */}
         <div className="bg-card rounded-3xl p-6 border border-border/50 shadow-lg mb-6">
@@ -178,7 +252,7 @@ export function CaloriesTracker({ onBack }: CaloriesTrackerProps) {
             {isAnalyzing ? (
               <>
                 <Loader2 className="w-5 h-5 animate-spin" />
-                Analizando comida...
+                Analizando con IA...
               </>
             ) : (
               <>
@@ -192,32 +266,93 @@ export function CaloriesTracker({ onBack }: CaloriesTrackerProps) {
         {/* Analysis result modal */}
         {showResult && analyzedFood && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-6">
-            <div className="bg-card rounded-3xl p-6 w-full max-w-sm">
+            <div className="bg-card rounded-3xl p-6 w-full max-w-sm max-h-[90vh] overflow-y-auto">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="font-semibold text-foreground">Resultado del analisis</h3>
-                <button onClick={() => setShowResult(false)} className="text-muted-foreground">
+                <button onClick={() => { setShowResult(false); setCapturedImage(null) }} className="text-muted-foreground">
                   <X className="w-5 h-5" />
                 </button>
               </div>
+
+              {/* Captured image preview */}
+              {capturedImage && (
+                <div className="w-full h-40 rounded-2xl overflow-hidden mb-4">
+                  <img 
+                    src={capturedImage} 
+                    alt="Comida capturada" 
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+              )}
               
-              <div className="bg-amber-500/10 rounded-2xl p-4 mb-4 flex items-center gap-3">
-                <div className="w-12 h-12 rounded-xl bg-amber-500/20 flex items-center justify-center">
-                  <Sparkles className="w-6 h-6 text-amber-500" />
+              <div className="bg-amber-500/10 rounded-2xl p-4 mb-4">
+                <div className="flex items-start gap-3">
+                  <div className="w-12 h-12 rounded-xl bg-amber-500/20 flex items-center justify-center flex-shrink-0">
+                    <Sparkles className="w-6 h-6 text-amber-500" />
+                  </div>
+                  <div className="flex-1">
+                    <p className="font-medium text-foreground">{analyzedFood.name}</p>
+                    
+                    {/* Editable calories */}
+                    <div className="flex items-center gap-2 mt-1">
+                      {editingCalories ? (
+                        <input
+                          type="number"
+                          value={customCalories}
+                          onChange={(e) => setCustomCalories(e.target.value)}
+                          className="w-20 text-2xl font-bold text-amber-500 bg-transparent border-b border-amber-500 outline-none"
+                          autoFocus
+                          onBlur={() => setEditingCalories(false)}
+                          onKeyDown={(e) => e.key === 'Enter' && setEditingCalories(false)}
+                        />
+                      ) : (
+                        <span className="text-2xl font-bold text-amber-500">
+                          {customCalories || analyzedFood.calories}
+                        </span>
+                      )}
+                      <span className="text-amber-500 font-medium">kcal</span>
+                      <button 
+                        onClick={() => setEditingCalories(true)}
+                        className="p-1 rounded-full hover:bg-amber-500/20 transition-colors"
+                      >
+                        <Edit3 className="w-4 h-4 text-amber-500" />
+                      </button>
+                    </div>
+
+                    <p className="text-xs text-muted-foreground mt-1">{analyzedFood.portion}</p>
+                  </div>
                 </div>
-                <div>
-                  <p className="font-medium text-foreground">{analyzedFood.name}</p>
-                  <p className="text-2xl font-bold text-amber-500">{analyzedFood.calories} kcal</p>
+
+                {/* Confidence badge */}
+                <div className="mt-3 flex items-center gap-2">
+                  <span className={`text-xs px-2 py-1 rounded-full ${getConfidenceColor(analyzedFood.confidence)}`}>
+                    {getConfidenceText(analyzedFood.confidence)}
+                  </span>
                 </div>
+
+                {/* Ingredients */}
+                {analyzedFood.ingredients.length > 0 && (
+                  <div className="mt-3">
+                    <p className="text-xs text-muted-foreground mb-1">Ingredientes detectados:</p>
+                    <div className="flex flex-wrap gap-1">
+                      {analyzedFood.ingredients.map((ing, idx) => (
+                        <span key={idx} className="text-xs bg-secondary px-2 py-0.5 rounded-full text-foreground">
+                          {ing}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
 
               <p className="text-xs text-muted-foreground mb-4 text-center">
-                Esta es una estimacion aproximada basada en IA
+                Puedes editar las calorias si crees que la estimacion no es correcta
               </p>
 
               <div className="flex gap-3">
                 <button 
-                  onClick={() => setShowResult(false)}
-                  className="flex-1 py-3 border border-border rounded-xl text-sm font-medium"
+                  onClick={() => { setShowResult(false); setCapturedImage(null) }}
+                  className="flex-1 py-3 border border-border rounded-xl text-sm font-medium text-foreground"
                 >
                   Cancelar
                 </button>
@@ -293,10 +428,12 @@ export function CaloriesTracker({ onBack }: CaloriesTrackerProps) {
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-lg bg-amber-500/10 flex items-center justify-center">
                   <span className="text-lg">
-                    {entry.name.includes("Avena") ? "🥣" : 
-                     entry.name.includes("Ensalada") ? "🥗" :
-                     entry.name.includes("Manzana") ? "🍎" :
-                     entry.name.includes("Pollo") ? "🍗" : "🍽️"}
+                    {entry.name.toLowerCase().includes("avena") ? "🥣" : 
+                     entry.name.toLowerCase().includes("ensalada") ? "🥗" :
+                     entry.name.toLowerCase().includes("manzana") ? "🍎" :
+                     entry.name.toLowerCase().includes("pollo") ? "🍗" :
+                     entry.name.toLowerCase().includes("huevo") ? "🍳" :
+                     entry.name.toLowerCase().includes("salchicha") ? "🌭" : "🍽️"}
                   </span>
                 </div>
                 <div>
